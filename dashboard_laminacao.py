@@ -377,6 +377,19 @@ st.download_button(
     file_name=f"laminacao_{mes_sel.lower().replace('/', '_')}.csv",
     mime="text/csv"
 )
+# ---------------- BOTÃO DE ATUALIZAÇÃO MANUAL ----------------
+st.markdown("### 🔄 Atualização de Dados")
+
+col_refresh1, col_refresh2 = st.columns([1, 5])
+
+with col_refresh1:
+    if st.button("🔁 Atualizar Agora"):
+        st.cache_data.clear()  # limpa cache do Streamlit
+        st.experimental_rerun()  # recarrega o app imediatamente
+
+with col_refresh2:
+    st.caption("Os dados também são atualizados automaticamente a cada 60 segundos.")
+
 # ---------------- AUTO-ATUALIZAÇÃO A CADA 60 SEGUNDOS ----------------
 st.markdown(
     """
