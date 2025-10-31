@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from sklearn.linear_model import LinearRegression
+import numpy as np
+import plotly.graph_objects as go
 
 # ---------------- CONFIGURAÇÕES INICIAIS ----------------
 st.set_page_config(page_title="Dashboard - Laminação BonSono", layout="wide")
@@ -162,6 +165,140 @@ if col_data_ordem and not df_filtrado[col_data_ordem].isna().all():
     df_data = df_filtrado.groupby(col_data_ordem, as_index=False)["Qnte"].sum().sort_values(col_data_ordem)
     fig3 = px.line(df_data, x=col_data_ordem, y="Qnte", markers=True, title="Evolução da Produção Diária", color_discrete_sequence=["#1565C0"])
     st.plotly_chart(fig3, use_container_width=True)
+    
+# ---------------- PREVISÃO DE PRODUÇÃO POR DENSIDADE ----------------
+# ---------------- PREVISÃO DE PRODUÇÃO (IA Preditiva) ----------------
+st.markdown("### 🤖 Previsão de Produção (IA Preditiva)")
+
+# Tipo de previsão
+tipo_prev = st.radio(
+    "Escolha o tipo de previsão:",
+    ["Por Densidade", "Por Produto"],
+    horizontal=True
+)
+
+# ========== OPÇÃO 1: PREVISÃO POR DENSIDADE ==========
+if tipo_prev == "Por Densidade":
+    if col_densidade and col_data_ordem and "Qnte" in df_filtrado.columns:
+        df_prev_total = df_filtrado.dropna(subset=[col_densidade, col_data_ordem, "Qnte"]).copy()
+        df_prev_total[col_data_ordem] = pd.to_datetime(df_prev_total[col_data_ordem], errors="coerce")
+
+        densidades = df_prev_total[col_densidade].dropna().unique().tolist()
+        fig_prev_dens = go.Figure()
+        previsoes_combinadas = pd.DataFrame()
+
+        for dens in densidades:
+            df_d = df_prev_total[df_prev_total[col_densidade] == dens]
+            df_d = df_d.groupby(col_data_ordem, as_index=False)["Qnte"].sum().sort_values(col_data_ordem)
+
+            if len(df_d) < 3:
+                continue
+
+            df_d["dias"] = (df_d[col_data_ordem] - df_d[col_data_ordem].min()).dt.days
+
+            X = df_d[["dias"]]
+            y = df_d["Qnte"]
+
+            modelo = LinearRegression()
+            modelo.fit(X, y)
+
+            dias_futuros = np.arange(df_d["dias"].max() + 1, df_d["dias"].max() + 8).reshape(-1, 1)
+            previsoes = modelo.predict(dias_futuros)
+            datas_futuras = pd.date_range(df_d[col_data_ordem].max() + pd.Timedelta(days=1), periods=7)
+
+            fig_prev_dens.add_trace(go.Scatter(
+                x=df_d[col_data_ordem], y=df_d["Qnte"],
+                mode="lines+markers", name=f"{dens} (Real)",
+                line=dict(width=2)
+            ))
+            fig_prev_dens.add_trace(go.Scatter(
+                x=datas_futuras, y=previsoes,
+                mode="lines+markers", name=f"{dens} (Previsto)",
+                line=dict(dash="dot", width=2)
+            ))
+
+            temp_df = pd.DataFrame({
+                "Densidade": dens,
+                "Data Prevista": datas_futuras,
+                "Produção Estimada": previsoes.round(0).astype(int)
+            })
+            previsoes_combinadas = pd.concat([previsoes_combinadas, temp_df], ignore_index=True)
+
+        if not previsoes_combinadas.empty:
+            fig_prev_dens.update_layout(
+                title="📅 Previsão de Produção por Densidade — Próximos 7 Dias",
+                xaxis_title="Data",
+                yaxis_title="Quantidade (Qnte)",
+                legend_title="Legenda",
+                template="plotly_white",
+                height=500
+            )
+            st.plotly_chart(fig_prev_dens, use_container_width=True)
+            st.dataframe(previsoes_combinadas, use_container_width=True)
+        else:
+            st.info("⚠️ Dados insuficientes para gerar previsões por densidade.")
+    else:
+        st.warning("⚠️ Colunas necessárias (densidade, data, quantidade) não encontradas.")
+
+# ========== OPÇÃO 2: PREVISÃO POR PRODUTO ==========
+else:
+    if col_produto and col_data_ordem and "Qnte" in df_filtrado.columns:
+        df_prev_total = df_filtrado.dropna(subset=[col_produto, col_data_ordem, "Qnte"]).copy()
+        df_prev_total[col_data_ordem] = pd.to_datetime(df_prev_total[col_data_ordem], errors="coerce")
+
+        produtos_disp = sorted(df_prev_total[col_produto].dropna().unique().tolist())
+        produto_prev_sel = st.selectbox("Selecione o produto para previsão:", produtos_disp)
+
+        df_p = df_prev_total[df_prev_total[col_produto] == produto_prev_sel].copy()
+
+        if len(df_p) < 3:
+            st.warning("⚠️ Histórico insuficiente para gerar previsão para este produto.")
+        else:
+            df_p = df_p.groupby(col_data_ordem, as_index=False)["Qnte"].sum().sort_values(col_data_ordem)
+            df_p["dias"] = (df_p[col_data_ordem] - df_p[col_data_ordem].min()).dt.days
+
+            X = df_p[["dias"]]
+            y = df_p["Qnte"]
+
+            modelo = LinearRegression()
+            modelo.fit(X, y)
+
+            dias_futuros = np.arange(df_p["dias"].max() + 1, df_p["dias"].max() + 8).reshape(-1, 1)
+            previsoes = modelo.predict(dias_futuros)
+            datas_futuras = pd.date_range(df_p[col_data_ordem].max() + pd.Timedelta(days=1), periods=7)
+
+            fig_prev = go.Figure()
+            fig_prev.add_trace(go.Scatter(
+                x=df_p[col_data_ordem], y=df_p["Qnte"],
+                mode="lines+markers", name="Histórico Real",
+                line=dict(color="#1565C0", width=2)
+            ))
+            fig_prev.add_trace(go.Scatter(
+                x=datas_futuras, y=previsoes,
+                mode="lines+markers", name="Previsão (IA)",
+                line=dict(color="#64B5F6", dash="dot", width=2)
+            ))
+
+            fig_prev.update_layout(
+                title=f"📅 Previsão de Produção — {produto_prev_sel}",
+                xaxis_title="Data",
+                yaxis_title="Quantidade (Qnte)",
+                legend_title="Legenda",
+                template="plotly_white",
+                height=500
+            )
+            st.plotly_chart(fig_prev, use_container_width=True)
+
+            df_prev_tabela = pd.DataFrame({
+                "Produto": produto_prev_sel,
+                "Data Prevista": datas_futuras,
+                "Produção Estimada": previsoes.round(0).astype(int)
+            })
+
+            st.dataframe(df_prev_tabela, use_container_width=True)
+    else:
+        st.warning("⚠️ Colunas necessárias (produto, data, quantidade) não encontradas.")
+
 
 if col_densidade and "Qnte" in df_filtrado.columns:
     # Agrupar por densidade e ordenar
