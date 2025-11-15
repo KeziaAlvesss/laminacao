@@ -114,7 +114,8 @@ if responsavel_sel != "Todos" and col_responsavel:
     df_filtrado = df_filtrado[df_filtrado[col_responsavel] == responsavel_sel]
 if produto_sel != "Todos" and col_produto:
     df_filtrado = df_filtrado[df_filtrado[col_produto] == produto_sel]
-
+if col_produto and col_produto in df_filtrado.columns:
+    df_filtrado[col_produto] = df_filtrado[col_produto].str.strip().str.upper()
 # ---------------- INDICADORES (KPIs) ----------------
 st.markdown(f"### 📈 Indicadores Gerais — {mes_sel}")
 
